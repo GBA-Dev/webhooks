@@ -1,12 +1,23 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
-import { lastValueFrom, tap } from 'rxjs';
+import {
+  catchError,
+  defaultIfEmpty,
+  lastValueFrom,
+  of,
+  switchMap,
+  tap,
+} from 'rxjs';
+import { DiscordBots } from 'src/discord/discord-bots.model';
+import { DiscordService } from 'src/discord/discord.service';
 import { NotionService } from 'src/notion/notion.service';
 
 @Injectable()
 export class WebhookPollingService implements OnModuleInit {
-  
-  constructor(private readonly notionService: NotionService) {}
-  
+  constructor(
+    private readonly notionService: NotionService,
+    private readonly discordService: DiscordService
+  ) {}
+
   private readonly serviceClassNames = [NotionService.name];
   private readonly logger = new Logger(WebhookPollingService.name);
   private intervalId: NodeJS.Timeout;
@@ -17,10 +28,10 @@ export class WebhookPollingService implements OnModuleInit {
   }
 
   startPolling() {
-    this.logger.log(`Starting polling 🚀 for ${this.serviceClassNames}`);
+    this.logger.log(`Starting polling 🔥 for ${this.serviceClassNames}`);
     this.intervalId = setInterval(() => {
       this.pollForUpdates();
-    }, 5000);
+    }, parseInt(process.env.POLLING_INTERVAL) || 60000);
   }
 
   stopPolling() {
@@ -31,11 +42,31 @@ export class WebhookPollingService implements OnModuleInit {
   }
 
   private async pollForUpdates() {
-
-    await lastValueFrom(this.notionService.getNotionDatabase()
-      .pipe(tap((notionMessages) => this.logger.warn(`Polling complete: ${JSON.stringify(notionMessages)}`)))
-
-    
-    );
+    try {
+      await lastValueFrom(
+        this.notionService.getNotionDatabase().pipe(
+          tap((notionMessages) =>
+            this.logger.warn(
+              `Polling complete: ${JSON.stringify(notionMessages)}`
+            )
+          ),
+          switchMap((notionMessages) => {
+            return this.discordService.postDiscordMessage(
+              notionMessages,
+              DiscordBots.Notion
+            );
+          }),
+          defaultIfEmpty(false),
+          catchError((error) => {
+            this.logger.error(
+              `[${NotionService.name}] Error while polling: ${error}`
+            );
+            return of(null);
+          })
+        )
+      );
+    } catch (error) {
+      this.logger.error(`[👻 👻 👻 👻 👻]: ${error}`);
+    }
   }
 }

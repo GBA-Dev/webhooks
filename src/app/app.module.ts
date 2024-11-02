@@ -9,7 +9,7 @@ import { HttpModule } from '@nestjs/axios';
 import { WebhookPollingService } from './webhook-polling.service';
 
 @Module({
-  imports: [DiscordModule, HttpModule, NotionModule, TrelloModule],
+  imports: [HttpModule, DiscordModule, NotionModule, TrelloModule],
   controllers: [AppController],
   providers: [AppService, WebhookPollingService],
 })
