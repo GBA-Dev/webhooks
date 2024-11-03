@@ -1,7 +1,8 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
-import { concatMap, from, map, tap } from 'rxjs';
+import { catchError, concatMap, from, of, tap } from 'rxjs';
 import { DiscordBots, discordBots } from './discord-bots.model';
+import { DiscordMessage } from './discord-message.model';
 
 @Injectable()
 export class DiscordService {
@@ -9,40 +10,27 @@ export class DiscordService {
 
   private readonly logger = new Logger(DiscordService.name);
 
-  postDiscordMessage(messages: unknown[], botInstance: DiscordBots) {
+  postDiscordMessage(messages: DiscordMessage[], botInstance: DiscordBots) {
     return from(messages).pipe(
-      map((message) => this.formatDiscordMessage(message, botInstance)),
+      tap(() => this.logger.log(`Posting Discord message from ${botInstance}`)),
       concatMap((message) =>
         this.postDiscordMessageToWebhook(message, botInstance)
       )
     );
   }
 
-  private formatDiscordMessage(message: any, botInstance: DiscordBots) {
-    return {
-      username: discordBots[botInstance].username,
-      avatar_url: discordBots[botInstance].avatar_url,
-      embeds: [
-        {
-          title: message['title'],
-          description: message['description'] || message['url'],
-          footer: {
-            text: `${botInstance} Bot`,
-          },
-        },
-      ],
-    };
-  }
-
-  private postDiscordMessageToWebhook(message: any, botInstance: DiscordBots) {
+  private postDiscordMessageToWebhook(
+    message: DiscordMessage,
+    botInstance: DiscordBots
+  ) {
     const webhookUrl = discordBots[botInstance].webhookUrl;
     return this.httpService.post(webhookUrl, message).pipe(
-      tap((response) => {
-        this.logger.log(
-          `Posted Discord message successfully: ${JSON.stringify(
-            response.data
-          )}`
+      tap(() => this.logger.log(`Posted Discord message from ${botInstance}`)),
+      catchError((error) => {
+        this.logger.error(
+          `Failed to post Discord message from ${botInstance}: ${error}`
         );
+        return of(error);
       })
     );
   }
