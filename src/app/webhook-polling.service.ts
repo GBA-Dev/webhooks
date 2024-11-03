@@ -33,8 +33,7 @@ export class WebhookPollingService implements OnModuleInit {
     this.logger.log(`Starting polling 🔥 for ${this.serviceClassNames}`);
     this.intervalId = setInterval(() => {
       this.pollForUpdates();
-    }, 5000);
-    // }, parseInt(process.env.POLLING_INTERVAL) || 60000);
+    }, parseInt(process.env.POLLING_INTERVAL) || 60000);
   }
 
   stopPolling() {
