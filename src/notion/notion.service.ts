@@ -2,19 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Client } from '@notionhq/client';
 import { PageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 import { from, map, concatMap, toArray, tap, iif, of, filter } from 'rxjs';
-
-const hash = (str: string): number => {
-  let hash = 0,
-    i,
-    chr;
-  if (str.length === 0) return hash;
-  for (i = 0; i < str.length; i++) {
-    chr = str.charCodeAt(i);
-    hash = (hash << 5) - hash + chr;
-    hash |= 0; // Convert to 32bit integer
-  }
-  return hash;
-};
+import { discordBots, DiscordBots } from '../discord/discord-bots.model';
+import { DiscordMessage } from 'src/discord/discord-message.model';
+import { hash } from 'src/hash';
 
 @Injectable()
 export class NotionService {
@@ -24,21 +14,26 @@ export class NotionService {
   private readonly pageHashMap = new Map<string, number>();
   private isFirstPoll = true; // Track if this is the first poll cycle
 
-  getNotionDatabase() {
-    return this.fetchNotionPages().pipe(
+  getNotionDatabaseUpdates() {
+    return this.fetchNotionDatabase().pipe(
       concatMap((pages) => this.checkForPageDifferences(pages)),
       concatMap((pageDifferences) => this.fetchUpdatedPages(pageDifferences)),
+      map((messages) =>
+        messages.map((message) =>
+          this.createNotionDiscordMessage(message, DiscordBots.Notion)
+        )
+      ),
       tap(() => (this.isFirstPoll = false))
     );
   }
 
   // Step 1: Fetch and Process Pages from Notion
-  private fetchNotionPages() {
+  private fetchNotionDatabase() {
     return from(this.fetchDatabaseInfo()).pipe(
       map((response) => response.results as PageObjectResponse[]),
       map((pages) =>
         pages.map((page) => {
-          const { id, properties } = page; // Focus on stable fields like 'properties'
+          const { id, properties } = page;
           const stableContent = JSON.stringify({ id, properties });
           return { id, hash: hash(stableContent) };
         })
@@ -67,7 +62,7 @@ export class NotionService {
       filter((page) => page.isDifferent && !this.isFirstPoll),
       concatMap((page) =>
         from(this.fetchPageInfo(page.id)).pipe(
-          tap(() => this.logger.log(`Fetched full page info for ${page.id}`)),
+          // tap(() => this.logger.log(`Fetched full page info for ${page.id}`)),
           map((pageInfo: PageObjectResponse) => {
             // They got a bit tricky with the union of various property types
             const titleObject = pageInfo.properties.Page;
@@ -81,6 +76,35 @@ export class NotionService {
       ),
       toArray()
     );
+  }
+
+  title: string;
+  description: string;
+  timestamp: string;
+  fields: string;
+  footer: {
+    text: string;
+    link: string;
+  };
+
+  private createNotionDiscordMessage(
+    message: { title: string; url: string },
+    botInstance: DiscordBots
+  ): DiscordMessage {
+    return {
+      title: discordBots[botInstance].username,
+      avatar_url: discordBots[botInstance].avatar_url,
+      embeds: [
+        {
+          title: message['title'],
+          description: message['description'] || message['url'],
+          footer: {
+            text: `${botInstance} Bot`,
+            link: 'https://notion.so',
+          },
+        },
+      ],
+    };
   }
 
   // Helper: Fetch Specific Page Information
