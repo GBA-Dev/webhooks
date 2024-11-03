@@ -10,15 +10,17 @@ import {
 import { DiscordBots } from 'src/discord/discord-bots.model';
 import { DiscordService } from 'src/discord/discord.service';
 import { NotionService } from 'src/notion/notion.service';
+import { TrelloService } from 'src/trello/trello.service';
 
 @Injectable()
 export class WebhookPollingService implements OnModuleInit {
   constructor(
     private readonly notionService: NotionService,
-    private readonly discordService: DiscordService
+    private readonly discordService: DiscordService,
+    private readonly trelloService: TrelloService
   ) {}
 
-  private readonly serviceClassNames = [NotionService.name];
+  private readonly serviceClassNames = [NotionService.name, TrelloService.name];
   private readonly logger = new Logger(WebhookPollingService.name);
   private intervalId: NodeJS.Timeout;
 
@@ -31,7 +33,8 @@ export class WebhookPollingService implements OnModuleInit {
     this.logger.log(`Starting polling 🔥 for ${this.serviceClassNames}`);
     this.intervalId = setInterval(() => {
       this.pollForUpdates();
-    }, parseInt(process.env.POLLING_INTERVAL) || 60000);
+    }, 5000);
+    // }, parseInt(process.env.POLLING_INTERVAL) || 60000);
   }
 
   stopPolling() {
@@ -44,11 +47,17 @@ export class WebhookPollingService implements OnModuleInit {
   private async pollForUpdates() {
     try {
       await lastValueFrom(
-        this.notionService.getNotionDatabase().pipe(
+        this.notionService.getNotionDatabaseUpdates().pipe(
           tap((notionMessages) =>
-            this.logger.warn(
-              `Polling complete: ${JSON.stringify(notionMessages)}`
-            )
+            notionMessages.length > 0
+              ? this.logger.warn(
+                  `${
+                    TrelloService.name
+                  } Messages ready to be sent: ${JSON.stringify(
+                    notionMessages
+                  )}`
+                )
+              : this.logger.log(`${NotionService.name} No messages to send`)
           ),
           switchMap((notionMessages) => {
             return this.discordService.postDiscordMessage(
@@ -60,6 +69,35 @@ export class WebhookPollingService implements OnModuleInit {
           catchError((error) => {
             this.logger.error(
               `[${NotionService.name}] Error while polling: ${error}`
+            );
+            return of(null);
+          })
+        )
+      );
+
+      await lastValueFrom(
+        this.trelloService.getTrelloBoardUpdates().pipe(
+          tap((trelloMessages) =>
+            trelloMessages.length > 0
+              ? this.logger.warn(
+                  `${
+                    TrelloService.name
+                  } Messages ready to be sent: ${JSON.stringify(
+                    trelloMessages
+                  )}`
+                )
+              : this.logger.log(`${TrelloService.name} No messages to send`)
+          ),
+          switchMap((trelloMessages) => {
+            return this.discordService.postDiscordMessage(
+              trelloMessages,
+              DiscordBots.Trello
+            );
+          }),
+          defaultIfEmpty(false),
+          catchError((error) => {
+            this.logger.error(
+              `${TrelloService.name} Error while polling: ${error}`
             );
             return of(null);
           })
